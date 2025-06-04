@@ -1,0 +1,62 @@
+name: RezzFy Breaker KSU NEXT (Built-in KSU)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kernel source
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential cpio flex gdisk libssl-dev lz4 \
+                                libncurses5-dev libncursesw5-dev rsync xz-utils zlib1g-dev ccache \
+                                gcc-aarch64-linux-gnu
+
+    - name: Add KSU Next support (Built-in)
+      run: |
+        # Mengunduh dan menjalankan skrip setup KernelSU-Next.
+        # Skrip ini secara default akan mencoba mengintegrasikan KSU sebagai built-in.
+        echo "Downloading KernelSU-Next setup script..."
+        curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/next/kernel/setup.sh" -o ksu_setup.sh
+        echo "Making KernelSU-Next setup script executable..."
+        chmod +x ksu_setup.sh
+        echo "Running KernelSU-Next setup script for built-in KSU..."
+        bash ksu_setup.sh --kernel-path=$(pwd)
+
+        # --- Tambahan untuk memastikan defconfig ---
+        # Ini akan menyalin whyred_defconfig ke .config di root folder kernel
+        # dan kemudian menjalankan olddefconfig untuk memadukan dengan perubahan KSU.
+        echo "Applying defconfig from arch/arm64/configs/ice-whyred-oldcam_defconfig..."
+        cp arch/arm64/configs/ice-whyred-oldcam_defconfig .config
+        make olddefconfig
+        # --- Akhir Tambahan ---
+
+        echo "Verifying KSU built-in configuration..."
+        grep "CONFIG_KSU_ROOT" .config || echo "CONFIG_KSU_ROOT not found in .config, check KSU setup."
+        grep "CONFIG_KSU_DEBUG" .config || echo "CONFIG_KSU_DEBUG not found in .config, check KSU setup."
+
+    - name: Android kernel build
+      uses: lemniskett/android-kernel-actions@master
+      id: build
+      env:
+        NAME: RezzFy Breaker KSU NEXT (Built-in)
+      with:
+        arch: arm64
+        compiler: gcc/12 # Tetap gunakan kompiler yang terakhir Anda coba
+
+        # Di sini, Anda cukup menulis nama defconfig, bukan jalur lengkap.
+        # Action ini akan mencari di arch/arm64/configs/whyred_defconfig secara otomatis.
+        defconfig: ice-whyred-oldcam_defconfig
+        image: Image.gz-dtb
+
+    - name: Upload Kernel Image with Built-in KSU
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.NAME }}
+        path: ${{ steps.build.outputs.outfile }}
